@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace GeoMapApp
+namespace GameEngineApp
 {
     internal static class Program
     {
@@ -15,168 +15,181 @@ namespace GeoMapApp
         }
     }
 
-    public interface IMapItem
-    {
-        void Draw(Graphics g);
-        void Move(int dx, int dy);
-        IMapItem Clone();
-        void Print(ListBox lb, int level);
-    }
-
-    public class House : IMapItem
+    public class UnitType
     {
         public string Name;
-        public int X, Y;
+        public Color UnitColor;
+        public string ModelName;
 
-        public House(string name, int x, int y) { Name = name; X = x; Y = y; }
-        public void Draw(Graphics g)
+        public UnitType(string name, Color color, string modelName)
         {
-            g.FillRectangle(Brushes.SandyBrown, X, Y, 50, 40);
-            g.DrawRectangle(Pens.Black, X, Y, 50, 40);
-            g.DrawString(Name, SystemFonts.DefaultFont, Brushes.Black, X + 2, Y + 2);
-        }
-        public void Move(int dx, int dy) { X += dx; Y += dy; }
-        public IMapItem Clone() => new House(Name, X, Y);
-        public void Print(ListBox lb, int level) =>
-            lb.Items.Add(new string('-', level * 2) + " " + Name);
-    }
-
-    public class Street : IMapItem
-    {
-        public string Name;
-        public int X, Y;
-        public List<IMapItem> Houses = new List<IMapItem>();
-
-        public Street(string name, int x, int y) { Name = name; X = x; Y = y; }
-        public void Add(IMapItem house) => Houses.Add(house);
-
-        public void Draw(Graphics g)
-        {
-            g.DrawString(Name + ":", SystemFonts.DefaultFont, Brushes.DarkSlateGray, X, Y + 12);
-            Houses.ForEach(h => h.Draw(g));
-        }
-
-        public void Move(int dx, int dy)
-        {
-            X += dx; Y += dy;
-            Houses.ForEach(h => h.Move(dx, dy));
-        }
-
-        public IMapItem Clone()
-        {
-            var copy = new Street(Name, X, Y);
-            Houses.ForEach(h => copy.Add(h.Clone()));
-            return copy;
-        }
-
-        public void Print(ListBox lb, int level)
-        {
-            lb.Items.Add(new string('-', level * 2) + " " + Name);
-            Houses.ForEach(h => h.Print(lb, level + 1));
+            Name = name;
+            UnitColor = color;
+            ModelName = modelName;
         }
     }
 
-    public class City : IMapItem
+    public static class UnitTypeFactory
     {
-        public string Name;
-        public int X, Y;
-        public List<IMapItem> Streets = new List<IMapItem>();
+        private static Dictionary<string, UnitType> _types = new Dictionary<string, UnitType>();
 
-        public City(string name, int x, int y) { Name = name; X = x; Y = y; }
-        public void Add(IMapItem street) => Streets.Add(street);
+        public static UnitType GetType(string name, Color color, string modelName)
+        {
+            if (!_types.ContainsKey(name))
+            {
+                _types[name] = new UnitType(name, color, modelName);
+            }
+            return _types[name];
+        }
+
+        public static int SharedTypesCount => _types.Count;
+    }
+
+    public class Unit
+    {
+        public int X, Y;
+        public int CurrentHp;
+        public UnitType Type; 
+
+        public Unit(int x, int y, int hp, UnitType type)
+        {
+            X = x;
+            Y = y;
+            CurrentHp = hp;
+            Type = type;
+        }
 
         public void Draw(Graphics g)
         {
-            g.DrawRectangle(Pens.SteelBlue, X, Y, 470, 390);
-            g.DrawString(Name, new Font("Arial", 10, FontStyle.Bold), Brushes.SteelBlue, X + 5, Y + 5);
-            Streets.ForEach(s => s.Draw(g));
+            using (Brush b = new SolidBrush(Type.UnitColor))
+            {
+                g.FillEllipse(b, X - 12, Y - 12, 24, 24);
+                g.DrawEllipse(Pens.Black, X - 12, Y - 12, 24, 24);
+            }
+            g.DrawString($"{Type.Name} ({CurrentHp} HP)", SystemFonts.DefaultFont, Brushes.Black, X + 15, Y - 6);
+        }
+    }
+
+    public interface IArmyFactory
+    {
+        Unit CreateWarrior(int x, int y);
+        Unit CreateArcher(int x, int y);
+    }
+
+    public class OrcFactory : IArmyFactory
+    {
+        public Unit CreateWarrior(int x, int y)
+        {
+            UnitType sharedType = UnitTypeFactory.GetType("Орк-Воин", Color.DarkSeaGreen, "HeavyOrcModel");
+            return new Unit(x, y, 120, sharedType);
         }
 
-        public void Move(int dx, int dy)
+        public Unit CreateArcher(int x, int y)
         {
-            X += dx; Y += dy;
-            Streets.ForEach(s => s.Move(dx, dy));
+            UnitType sharedType = UnitTypeFactory.GetType("Орк-Лучник", Color.OliveDrab, "LightOrcModel");
+            return new Unit(x, y, 75, sharedType);
+        }
+    }
+    public class ElfFactory : IArmyFactory
+    {
+        public Unit CreateWarrior(int x, int y)
+        {
+            UnitType sharedType = UnitTypeFactory.GetType("Эльф-Мечник", Color.SkyBlue, "ElfWarriorModel");
+            return new Unit(x, y, 90, sharedType);
         }
 
-        public IMapItem Clone()
+        public Unit CreateArcher(int x, int y)
         {
-            var copy = new City(Name, X, Y);
-            Streets.ForEach(s => copy.Add(s.Clone()));
-            return copy;
-        }
-
-        public void Print(ListBox lb, int level)
-        {
-            lb.Items.Add(new string('-', level * 2) + " " + Name);
-            Streets.ForEach(s => s.Print(lb, level + 1));
+            UnitType sharedType = UnitTypeFactory.GetType("Эльф-Лучник", Color.Gold, "ElfArcherModel");
+            return new Unit(x, y, 60, sharedType);
         }
     }
 
     public class MainForm : Form
     {
-        private City city;
-        private PictureBox pb = new PictureBox { Location = new Point(10, 10), Size = new Size(500, 420), BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
-        private ListBox lb = new ListBox { Location = new Point(520, 10), Size = new Size(240, 260) };
+        private IArmyFactory currentFactory; 
+        private List<Unit> units = new List<Unit>();
+        private Random rnd = new Random();
 
-        private Button btnCloneHouse = new Button { Text = "Клонировать дом", Location = new Point(520, 290), Size = new Size(240, 35) };
-        private Button btnCloneStreet = new Button { Text = "Клонировать улицу", Location = new Point(520, 335), Size = new Size(240, 35) };
-        private Button btnMove = new Button { Text = "Сдвинуть город", Location = new Point(520, 380), Size = new Size(240, 35) };
+        private PictureBox pbMap = new PictureBox { Location = new Point(12, 12), Size = new Size(500, 420), BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+        private Label lblStats = new Label { Location = new Point(525, 12), Size = new Size(240, 70), Font = new Font("Arial", 9, FontStyle.Bold) };
+        private ListBox lbUnits = new ListBox { Location = new Point(525, 85), Size = new Size(240, 160) };
+
+        private Button btnFactionOrcs = new Button { Text = "Орки", Location = new Point(525, 255), Size = new Size(240, 30), BackColor = Color.DarkSeaGreen };
+        private Button btnFactionElves = new Button { Text = "Эльфы", Location = new Point(525, 290), Size = new Size(240, 30), BackColor = Color.SkyBlue };
+        private Button btnSpawnWarrior = new Button { Text = "Создать Воина", Location = new Point(525, 330), Size = new Size(115, 35) };
+        private Button btnSpawnArcher = new Button { Text = "Создать Лучника", Location = new Point(650, 330), Size = new Size(115, 35) };
+        private Button btnSpawnSquad = new Button { Text = "Создать отряд", Location = new Point(525, 370), Size = new Size(240, 32), BackColor = Color.LightYellow };
+        private Button btnClear = new Button { Text = "Очистить карту", Location = new Point(525, 405), Size = new Size(240, 27) };
 
         public MainForm()
         {
-            this.Text = "Город - Улицы - Дома";
-            this.Size = new Size(790, 480);
+            this.Text = "армия армия";
+            this.Size = new Size(795, 485);
             this.StartPosition = FormStartPosition.CenterScreen;
 
-            pb.Paint += (s, e) => city?.Draw(e.Graphics);
+            pbMap.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                units.ForEach(u => u.Draw(e.Graphics));
+            };
 
-            btnCloneHouse.Click += (s, e) => AddHouse();
-            btnCloneStreet.Click += (s, e) => AddStreet();
-            btnMove.Click += (s, e) => { city?.Move(15, 10); UpdateUI(); };
+            btnFactionOrcs.Click += (s, e) => SetFaction(new OrcFactory(), "Орки");
+            btnFactionElves.Click += (s, e) => SetFaction(new ElfFactory(), "Эльфы");
 
-            this.Controls.AddRange(new Control[] { pb, lb, btnCloneHouse, btnCloneStreet, btnMove });
+            btnSpawnWarrior.Click += (s, e) => SpawnUnit(true);
+            btnSpawnArcher.Click += (s, e) => SpawnUnit(false);
+            btnSpawnSquad.Click += (s, e) => SpawnSquad();
+            btnClear.Click += (s, e) => { units.Clear(); UpdateUI(); };
 
-            city = new City("Город", 15, 15);
-            var st = new Street("Улица 1", 30, 45);
-            st.Add(new House("Дом 1", 100, 45));
-            st.Add(new House("Дом 2", 160, 45));
-            city.Add(st);
+            this.Controls.AddRange(new Control[] {
+                pbMap, lblStats, lbUnits,
+                btnFactionOrcs, btnFactionElves,
+                btnSpawnWarrior, btnSpawnArcher, btnSpawnSquad, btnClear
+            });
 
+            SetFaction(new OrcFactory(), "Орки");
+        }
+
+        private void SetFaction(IArmyFactory factory, string factionName)
+        {
+            currentFactory = factory;
             UpdateUI();
+        }
+
+        private void SpawnUnit(bool isWarrior)
+        {
+            int x = rnd.Next(30, pbMap.Width - 120);
+            int y = rnd.Next(30, pbMap.Height - 30);
+
+            Unit newUnit = isWarrior
+                ? currentFactory.CreateWarrior(x, y)
+                : currentFactory.CreateArcher(x, y);
+
+            units.Add(newUnit);
+            UpdateUI();
+        }
+
+        private void SpawnSquad()
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                SpawnUnit(rnd.Next(2) == 0);
+            }
         }
 
         private void UpdateUI()
         {
-            lb.Items.Clear();
-            city?.Print(lb, 0);
-            pb.Refresh();
-        }
+            lblStats.Text = $"Воинов на карте: {units.Count}\n" +
+                            $"Уникальных типов в памяти: {UnitTypeFactory.SharedTypesCount}\n";
 
-        private void AddHouse()
-        {
-            if (city.Streets.Count == 0) return;
-            var curStreet = (Street)city.Streets[city.Streets.Count - 1];
+            lbUnits.Items.Clear();
+            foreach (var u in units)
+            {
+                lbUnits.Items.Add($"{u.Type.Name} [{u.X}, {u.Y}] (HP: {u.CurrentHp})");
+            }
 
-            int count = curStreet.Houses.Count;
-            int lastX = count > 0 ? ((House)curStreet.Houses[count - 1]).X + 60 : curStreet.X + 70;
-            int lastY = count > 0 ? ((House)curStreet.Houses[count - 1]).Y : curStreet.Y;
-
-            var newHouse = new House("Дом " + (count + 1), lastX, lastY);
-            curStreet.Add(newHouse);
-            UpdateUI();
-        }
-
-        private void AddStreet()
-        {
-            if (city.Streets.Count == 0) return;
-            var firstStreet = (Street)city.Streets[0];
-
-            var newStreet = (Street)firstStreet.Clone();
-            newStreet.Name = "Улица " + (city.Streets.Count + 1);
-            newStreet.Move(0, city.Streets.Count * 60);
-
-            city.Add(newStreet);
-            UpdateUI();
+            pbMap.Refresh();
         }
     }
 }
